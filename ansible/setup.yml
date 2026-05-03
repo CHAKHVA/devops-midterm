@@ -1,0 +1,76 @@
+---
+- name: Environment Setup
+  hosts: localhost
+  connection: local
+  vars:
+    project_root: "{{ playbook_dir | dirname }}"
+    venv_path: "{{ project_root }}/venv"
+    deployments_path: "{{ project_root }}/deployments"
+    slots:
+      - blue
+      - green
+
+  tasks:
+    - name: Check Python 3 is installed
+      ansible.builtin.command: python3 --version
+      register: python_check
+      failed_when: python_check.rc != 0
+      changed_when: false
+
+    - name: Print Python version
+      ansible.builtin.debug:
+        msg: "Found {{ python_check.stdout }}"
+
+    - name: Create virtual environment
+      ansible.builtin.command: python3 -m venv {{ venv_path }}
+      args:
+        creates: "{{ venv_path }}/bin/activate"
+
+    - name: Install pip dependencies
+      ansible.builtin.command:
+        cmd: "{{ venv_path }}/bin/pip install -r {{ project_root }}/requirements.txt"
+      register: pip_result
+      changed_when: "'Successfully installed' in pip_result.stdout"
+
+    - name: Create logs directory
+      ansible.builtin.file:
+        path: "{{ project_root }}/logs"
+        state: directory
+        mode: "0755"
+
+    - name: Create deployment slot directories
+      ansible.builtin.file:
+        path: "{{ deployments_path }}/{{ item }}/src"
+        state: directory
+        mode: "0755"
+      loop: "{{ slots }}"
+
+    - name: Copy app source into each slot
+      ansible.builtin.copy:
+        src: "{{ project_root }}/src/"
+        dest: "{{ deployments_path }}/{{ item }}/src/"
+        mode: "0644"
+      loop: "{{ slots }}"
+
+    - name: Copy requirements into each slot
+      ansible.builtin.copy:
+        src: "{{ project_root }}/requirements.txt"
+        dest: "{{ deployments_path }}/{{ item }}/requirements.txt"
+        mode: "0644"
+      loop: "{{ slots }}"
+
+    - name: Write initial active_slot marker
+      ansible.builtin.copy:
+        content: "blue"
+        dest: "{{ project_root }}/active_slot"
+        force: false
+        mode: "0644"
+
+    - name: Print setup summary
+      ansible.builtin.debug:
+        msg:
+          - "Setup complete!"
+          - "Project root : {{ project_root }}"
+          - "Virtual env  : {{ venv_path }}"
+          - "Deployments  : {{ deployments_path }}"
+          - "Active slot  : blue"
